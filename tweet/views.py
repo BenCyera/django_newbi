@@ -1,6 +1,7 @@
 from django.shortcuts import render, redirect
 from .models import TweetModel, TweetComment
 from django.contrib.auth.decorators import login_required
+from django.views.generic import ListView, TemplateView
 
 
 def home(request):
@@ -22,11 +23,20 @@ def tweet(request):
 
     elif request.method == 'POST':
         user = request.user
-        my_tweet = TweetModel()
-        my_tweet.author = user
-        my_tweet.content = request.POST.get('my-content', '')
-        my_tweet.save()
-        return redirect('/tweet')
+        content = request.POST.get('my-content', '')  # 글 작성이 되지 않았다면 빈칸으로
+        tags = request.POST.get('tag', '').split(',')
+
+        if content == '':  # 글이 빈칸이면 기존 tweet과 에러를 같이 출력
+            all_tweet = TweetModel.objects.all().order_by('-created_at')
+            return render(request, 'tweet/home.html', {'error': '글은 공백일 수 없습니다', 'tweet': all_tweet})
+        else:
+            my_tweet = TweetModel.objects.create(author=user, content=content)  # 글 저장을 한번에!
+            for tag in tags:
+                tag = tag.strip()
+                if tag != '':  # 태그를 작성하지 않았을 경우에 저장하지 않기 위해서
+                    my_tweet.tags.add(tag)
+            my_tweet.save()
+            return redirect('/tweet')
 
 
 def delete_tweet(request, id):
@@ -60,3 +70,25 @@ def delete_comment(request, id):
     in_tweet = my_comment.tweet.id
     my_comment.delete()
     return redirect('/tweet/' + str(in_tweet))
+
+
+# ----- v django-taggit 모듈에서 정해놓은 규칙 v -----
+
+
+# TagCloudTV 클래스 = 태그들을 모아놓은 태그클라우드
+class TagCloudTV(TemplateView):
+    template_name = 'taggit/tag_cloud_view.html'
+
+
+# TaggedObjectLV 클래스 = 태그들을 모아서 화면에 전달
+class TaggedObjectLV(ListView):
+    template_name = 'taggit/tag_with_post.html'
+    model = TweetModel
+
+    def get_queryset(self):
+        return TweetModel.objects.filter(tags__name=self.kwargs.get('tag'))
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['tagname'] = self.kwargs['tag']
+        return context
